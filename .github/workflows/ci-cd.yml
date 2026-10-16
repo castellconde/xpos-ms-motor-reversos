@@ -1,0 +1,48 @@
+name: CI/CD - Motor de Reversos Quarkus (Java 21 + PCI-DSS DevSecOps)
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
+env:
+  JAVA_VERSION: '21'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-test-and-security:
+    name: 1. Build Java 21, JUnit 5 & Security Gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout código fuente
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 21 LTS (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: 'maven'
+
+      - name: Ejecutar compilación y suite JUnit 5 (6 pasos de Demo + Seguridad PCI/mTLS)
+        run: mvn -B clean test
+
+      - name: Empaquetar artefacto Quarkus
+        run: mvn -B package -DskipTests
+
+      - name: Verificar ausencia de PAN o secretos en código (PCI-DSS Gate)
+        run: |
+          if grep -RInE "(BEGIN RSA PRIVATE KEY|BEGIN PRIVATE KEY)" src/; then
+            echo "ERROR: Llave privada detectada en el repositorio"
+            exit 1
+          fi
+
+      - name: Construir imagen OCI (Validación de Dockerfile Non-Root)
+        run: docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .

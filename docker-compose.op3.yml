@@ -1,0 +1,79 @@
+# =========================================================================================
+# Perfil Op3 (Híbrido Recomendado): Kafka KRaft + Servicio Quarkus en ARO (red-aro-cluster),
+# y PostgreSQL fuera del clúster en su propia subred privada con TLS (red-azure-flexible-pg)
+# simulando Azure Database for PostgreSQL Flexible Server zone-redundant.
+# =========================================================================================
+name: xpos-piloto-op3
+
+services:
+  kafka-aro-op3:
+    image: apache/kafka:3.8.0
+    container_name: xpos-kafka-aro-op3
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-aro-op3:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-aro-op3:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    ports:
+      - "9092:9092"
+    networks:
+      - red-aro-cluster
+
+  postgres-azure-flexible-op3:
+    image: postgres:16-alpine
+    container_name: xpos-postgres-azure-flexible-op3
+    environment:
+      POSTGRES_DB: xpos_reversos
+      POSTGRES_USER: ${XPOS_DB_USER:-xpos_app}
+      POSTGRES_PASSWORD: ${XPOS_DB_PASSWORD:-xpos_pilot_secret_2026}
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./src/main/resources/db/migration/V1__init_schema_particionado.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    networks:
+      - red-azure-flexible-pg
+
+  keycloak-aro-op3:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: xpos-keycloak-aro-op3
+    command: start-dev
+    environment:
+      KEYCLOAK_ADMIN: ${KC_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-xpos_kc_admin_2026}
+    ports:
+      - "8180:8080"
+    networks:
+      - red-aro-cluster
+
+  motor-reversos-quarkus-op3:
+    image: eclipse-temurin:21-jre-alpine
+    container_name: xpos-motor-reversos-op3
+    working_dir: /app
+    volumes:
+      - ./target/quarkus-app:/app:ro
+    command: ["java", "-Dquarkus.profile=op3", "-jar", "/app/quarkus-run.jar"]
+    environment:
+      XPOS_PERFIL_DESPLIEGUE: Op3-Hibrido-AzureFlexiblePG
+      XPOS_DB_JDBC_URL: jdbc:postgresql://postgres-azure-flexible-op3:5432/xpos_reversos?sslmode=prefer
+      XPOS_DB_USER: ${XPOS_DB_USER:-xpos_app}
+      XPOS_DB_PASSWORD: ${XPOS_DB_PASSWORD:-xpos_pilot_secret_2026}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - kafka-aro-op3
+      - postgres-azure-flexible-op3
+    networks:
+      - red-aro-cluster
+      - red-azure-flexible-pg
+
+networks:
+  red-aro-cluster:
+    driver: bridge
+  red-azure-flexible-pg:
+    driver: bridge
