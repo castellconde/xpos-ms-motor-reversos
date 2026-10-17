@@ -9,7 +9,8 @@ import mx.xpos.integracion.domain.port.out.ConectorProveedorPort;
 
 /**
  * Adaptador de protocolo SOAP (Quarkus CXF + WS-Security).
- * Traduce Faults y códigos SOAP del proveedor a ResultadoCanonico.
+ * Construye el SOAP Envelope con cabecera WS-Security y clasifica la respuesta o SOAPFault
+ * en una de las 5 clases de ResultadoCanonico.
  */
 @ApplicationScoped
 public class ConectorProveedorSoapAdapter implements ConectorProveedorPort {
@@ -24,10 +25,21 @@ public class ConectorProveedorSoapAdapter implements ConectorProveedorPort {
 
     @Override
     public ResultadoCanonico ejecutarTransaccion(TransaccionCanonica transaccion) {
-        int numLlamada = simulador.registrarLlamada();
+        SimuladorProveedorControl.ModoProveedor modo = simulador.resolverModoParaFolio(transaccion.folio());
+        String soapEnvelopeResumen = "<soapenv:Envelope><soapenv:Header><wsse:Security/></soapenv:Header><soapenv:Body><ReversoSoapRequest folio=\""
+                + transaccion.folio() + "\"/></soapenv:Body></soapenv:Envelope>";
+        simulador.registrarTramaProtocolo(
+                "SOAP",
+                transaccion.proveedorId(),
+                "SOAPAction:ReversoSoapRequest",
+                transaccion.folio(),
+                soapEnvelopeResumen,
+                modo
+        );
+        int numLlamada = simulador.getLlamadasRecibidas();
         long latencia = simulador.getLatenciaSimuladaMs();
 
-        return switch (simulador.getModoActual()) {
+        return switch (modo) {
             case ARRIBA_EXITOSO -> new ResultadoCanonico.Exito(
                     "SOAP-00",
                     "AUTH-SOAP-" + transaccion.folio() + "-" + numLlamada,
@@ -41,7 +53,7 @@ public class ConectorProveedorSoapAdapter implements ConectorProveedorPort {
             );
             case APAGADO_SIN_CONEXION, ERROR_503_REINTENTABLE -> new ResultadoCanonico.ErrorReintentable(
                     "SOAP-FAULT-SERVER-UNAVAILABLE",
-                    "Endpoint SOAP no disponible temporalmente",
+                    "Endpoint SOAP no disponible temporalmente (soap:Server Fault)",
                     latencia
             );
             case TIMEOUT_ESTADO_DESCONOCIDO -> new ResultadoCanonico.EstadoDesconocido(
@@ -52,7 +64,7 @@ public class ConectorProveedorSoapAdapter implements ConectorProveedorPort {
             case ERROR_NEGOCIO_422 -> new ResultadoCanonico.ErrorNegocio(
                     "SOAP-FAULT-CLIENT-12",
                     "TRANSACCION_ORIGINAL_INVALIDA",
-                    "Rechazo de negocio en servicio SOAP",
+                    "Rechazo de negocio en servicio SOAP (soap:Client Fault)",
                     latencia
             );
         };

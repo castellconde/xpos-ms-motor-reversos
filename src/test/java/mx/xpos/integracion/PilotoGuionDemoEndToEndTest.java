@@ -477,4 +477,103 @@ class PilotoGuionDemoEndToEndTest {
                 .statusCode(403)
                 .body("codigoError", equalTo("SEC-MTLS-8705-002"));
     }
+
+    @Test
+    @Order(6)
+    @DisplayName("Sandbox Multiprotocolo (Gobierno Versiones XPOS): Certifica ISO 8583 (0800/0420/0421), SOAP XML y REST con reglas deterministas (-99, -68, -94)")
+    void paso6SandboxMultiprotocoloGobiernoVersionesIsoSoapRest() {
+        // 1. Emulador ISO 8583: Echo 0800 -> 0810 DE39=00
+        given()
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "mti": "0800",
+                          "proveedorId": "PROSA-ISO",
+                          "folio": "FOL-ECHO-01",
+                          "de11Stan": "000015",
+                          "de70NetworkManagementCode": "301"
+                        }
+                        """)
+                .when()
+                .post("/api/v1/sandbox/iso8583/trama")
+                .then()
+                .statusCode(200)
+                .body("mtiRespuesta", equalTo("0810"))
+                .body("de39ResponseCode", equalTo("00"));
+
+        // 2. Emulador SOAP 1.1/1.2 directo: Folio terminado en -99 dispara SOAPFault Client (HTTP 422)
+        given()
+                .contentType("text/xml")
+                .body("""
+                        <?xml version="1.0" encoding="UTF-8"?>
+                        <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xpos="http://xpos.mx/pagos/soap">
+                           <soapenv:Body>
+                              <xpos:ReversoSoapRequest>
+                                 <xpos:ProveedorId>BBVA-SOAP</xpos:ProveedorId>
+                                 <xpos:Folio>FOL-GOV-99</xpos:Folio>
+                              </xpos:ReversoSoapRequest>
+                           </soapenv:Body>
+                        </soapenv:Envelope>
+                        """)
+                .when()
+                .post("/api/v1/sandbox/soap/autorizador")
+                .then()
+                .statusCode(422);
+
+        // 3. Reglas deterministas en el Motor de Reversos SIN cambiar el modo global (ideal para CI/CD paralelo):
+        // 3.1 Folio terminado en -94 -> Simula "Ya Reversado" en autorizador ISO 8583 -> Estado YA_APLICADO (HTTP 200)
+        given()
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "transaccionOriginalId": "TXN-GOV-94",
+                          "reversoId": "REV-GOV-94",
+                          "cajaId": "POS-0601",
+                          "folio": "FOL-CERT-94",
+                          "proveedorId": "PROSA-ISO",
+                          "protocolo": "ISO_8583",
+                          "monto": 150.00,
+                          "moneda": "MXN",
+                          "tarjetaTokenizadaOEnmascarada": "411111******1111"
+                        }
+                        """)
+                .when()
+                .post("/api/v1/pos/reversos")
+                .then()
+                .statusCode(200)
+                .body("estadoActual", equalTo("YA_APLICADO"))
+                .body("ultimoCodigoRespuesta", equalTo("ISO-39-94"));
+
+        // 3.2 Folio terminado en -68 -> Simula Read Timeout post-envío -> ESTADO_DESCONOCIDO_CONSULTA en escalón RETRY_1M
+        given()
+                .contentType(ContentType.JSON)
+                .body("""
+                        {
+                          "transaccionOriginalId": "TXN-GOV-68",
+                          "reversoId": "REV-GOV-68",
+                          "cajaId": "POS-0602",
+                          "folio": "FOL-CERT-68",
+                          "proveedorId": "BANORTE-REST",
+                          "protocolo": "REST",
+                          "monto": 275.00,
+                          "moneda": "MXN",
+                          "tarjetaTokenizadaOEnmascarada": "TOK-6800001111"
+                        }
+                        """)
+                .when()
+                .post("/api/v1/pos/reversos")
+                .then()
+                .statusCode(202)
+                .body("estadoActual", equalTo("ESTADO_DESCONOCIDO_CONSULTA"))
+                .body("escalonActual", equalTo("RETRY_1M"))
+                .body("intentosTotales", equalTo(1));
+
+        // 4. Verificar que la bitácora del Sandbox registró todas las tramas multiprotocolo
+        given()
+                .when()
+                .get("/api/v1/sandbox/tramas")
+                .then()
+                .statusCode(200)
+                .body("size()", greaterThanOrEqualTo(4));
+    }
 }

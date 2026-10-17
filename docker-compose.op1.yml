@@ -67,6 +67,21 @@ services:
     depends_on:
       - kafka-aro-op1
       - postgres-aro-op1
+      - sandbox-proveedores-op1
+    networks:
+      - red-aro-cluster
+
+  sandbox-proveedores-op1:
+    image: eclipse-temurin:21-jre-alpine
+    container_name: xpos-sandbox-proveedores-op1
+    working_dir: /app
+    volumes:
+      - ../repositorios/xpos-ms-sandbox-proveedores/target/quarkus-app:/app:ro
+    command: ["java", "-jar", "/app/quarkus-run.jar"]
+    environment:
+      XPOS_SANDBOX_PORT: 8090
+    ports:
+      - "8090:8090"
     networks:
       - red-aro-cluster
 

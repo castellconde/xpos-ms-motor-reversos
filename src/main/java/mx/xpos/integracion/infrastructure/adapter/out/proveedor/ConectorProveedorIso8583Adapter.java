@@ -26,12 +26,23 @@ public class ConectorProveedorIso8583Adapter implements ConectorProveedorPort {
 
     @Override
     public ResultadoCanonico ejecutarTransaccion(TransaccionCanonica transaccion) {
-        int numLlamada = simulador.registrarLlamada();
-        long latencia = simulador.getLatenciaSimuladaMs();
+        SimuladorProveedorControl.ModoProveedor modo = simulador.resolverModoParaFolio(transaccion.folio());
         CorrelacionRedIso iso = transaccion.correlacionIso();
         String de90 = iso.mtiOriginal() + iso.stanOriginalDe11() + iso.fechaTransmisionDe7() + iso.adquirenteDe32();
+        String tramaIso = "MTI=0420|DE11=" + iso.stanOriginalDe11() + "|DE37=" + iso.rrnDe37() + "|DE90=" + de90;
 
-        return switch (simulador.getModoActual()) {
+        simulador.registrarTramaProtocolo(
+                "ISO_8583",
+                transaccion.proveedorId(),
+                "0420",
+                transaccion.folio(),
+                tramaIso,
+                modo
+        );
+        int numLlamada = simulador.getLlamadasRecibidas();
+        long latencia = simulador.getLatenciaSimuladaMs();
+
+        return switch (modo) {
             case ARRIBA_EXITOSO -> new ResultadoCanonico.Exito(
                     "ISO-39-00",
                     "RRN-" + iso.rrnDe37(),

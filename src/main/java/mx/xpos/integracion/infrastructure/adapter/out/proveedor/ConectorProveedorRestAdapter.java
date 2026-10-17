@@ -9,8 +9,8 @@ import mx.xpos.integracion.domain.port.out.ConectorProveedorPort;
 
 /**
  * Adaptador de protocolo REST (Quarkus REST Client con OAuth/mTLS).
- * Traduce códigos HTTP/JSON del proveedor a una de las 5 clases de ResultadoCanonico.
- * Cumple la regla de arquitectura: NO contiene lógica de reintentos.
+ * Conectado al motor de reglas del Sandbox Multiprotocolo para soportar tanto
+ * modos globales (Chaos Testing) como reglas deterministas por sufijo de folio (-99, -68, -91, -94).
  */
 @ApplicationScoped
 public class ConectorProveedorRestAdapter implements ConectorProveedorPort {
@@ -25,10 +25,19 @@ public class ConectorProveedorRestAdapter implements ConectorProveedorPort {
 
     @Override
     public ResultadoCanonico ejecutarTransaccion(TransaccionCanonica transaccion) {
-        int numLlamada = simulador.registrarLlamada();
+        SimuladorProveedorControl.ModoProveedor modo = simulador.resolverModoParaFolio(transaccion.folio());
+        simulador.registrarTramaProtocolo(
+                "REST",
+                transaccion.proveedorId(),
+                "POST /v2/proveedores/" + transaccion.proveedorId() + "/reversos",
+                transaccion.folio(),
+                "JSON payload idempotencyKey=" + transaccion.idempotencyKey(),
+                modo
+        );
+        int numLlamada = simulador.getLlamadasRecibidas();
         long latencia = simulador.getLatenciaSimuladaMs();
 
-        return switch (simulador.getModoActual()) {
+        return switch (modo) {
             case ARRIBA_EXITOSO -> new ResultadoCanonico.Exito(
                     "HTTP-200-OK",
                     "AUTH-REST-" + transaccion.folio() + "-" + numLlamada,

@@ -105,10 +105,9 @@ public class MotorReversosService implements ProcesarReversoUseCase, SoporteOper
                 .permittedNumberOfCallsInHalfOpenState(1)
                 .automaticTransitionFromOpenToHalfOpenEnabled(true)
                 .waitDurationInOpenState(Duration.ofMillis(cbWaitDurationInOpenMs))
-                // Solo las fallas técnicas (ErrorReintentable / EstadoDesconocido) cuentan como falla del circuito;
-                // los errores de negocio (422) son respuestas válidas del autorizador y NO abren el circuito.
-                .recordResult(resultado -> resultado instanceof ResultadoCanonico.ErrorReintentable
-                        || resultado instanceof ResultadoCanonico.EstadoDesconocido)
+                // Solo las fallas técnicas de disponibilidad (ErrorReintentable: 503 / sin conexión) abren el circuito;
+                // EstadoDesconocido dispara consulta previa en escalón diferido y ErrorNegocio va a DLQ.
+                .recordResult(resultado -> resultado instanceof ResultadoCanonico.ErrorReintentable)
                 .build();
 
         this.circuitBreakerProveedor = CircuitBreaker.of("proveedor-pagos-cb", cbConfig);

@@ -278,6 +278,7 @@ El detalle completo de pipelines, compuertas DevSecOps y políticas de promoció
 | [`xpos-core-motor-transacciones`](https://github.com/castellconde/xpos-core-motor-transacciones) | Librería / Arquetipo Quarkus (Java 21) | Modelo canónico (`TransaccionCanonica`, `ResultadoCanonico`), puertos hexagonales, hash encadenado SHA-256 y sanitizador PCI-DSS |
 | [`xpos-ms-fachada-pos`](https://github.com/castellconde/xpos-ms-fachada-pos) | Microservicio Quarkus (Java 21) | Fachada única para ~50,000 cajas POS, validación mTLS XFCC (`RFC 8705`), `Idempotency-Key` y publicación hacia Kafka |
 | [`xpos-ms-motor-reversos`](https://github.com/castellconde/xpos-ms-motor-reversos) | Microservicio Quarkus (Java 21) + Piloto | Motor de reversos, adaptadores REST/SOAP/ISO-8583 (`jPOS`), coordinación Circuit Breaker + pausa de Kafka, DLQ y depuración de particiones |
+| [`xpos-ms-sandbox-proveedores`](https://github.com/castellconde/xpos-ms-sandbox-proveedores) | Microservicio Sandbox Quarkus (Java 21) | Emulador multiprotocolo (`ISO 8583` `0800`/`0200`/`0420`/`0421`, `SOAP` XML Envelope/Fault, `REST`) con reglas deterministas por folio para independizar el gobierno de versiones de XPOS de ambientes externos |
 | [`xpos-infra-aro-terraform`](https://github.com/castellconde/xpos-infra-aro-terraform) | Infraestructura como Código (Terraform + Operadores) | ARO en 3 zonas, Node Pools PCI/No-PCI, Azure PostgreSQL Flexible Server (`pg_partman`, `pg_cron`), Blob Storage WORM y operadores de Kafka/Keycloak |
 | [`xpos-gitops-config-aro`](https://github.com/castellconde/xpos-gitops-config-aro) | GitOps (ArgoCD, Kustomize, YAML Proveedores, Bytebase) | Overlays de despliegue (`op1`, `op3`, `staging`, `prod-cde`), catálogo YAML de proveedores validado por JSON Schema, KEDA `ScaledObjects` y NetworkPolicies |
 
@@ -285,12 +286,12 @@ El detalle completo de pipelines, compuertas DevSecOps y políticas de promoció
 
 Los pilotos locales demuestran funcionamiento, no rendimiento: el mismo código corre con dos perfiles de despliegue (Op1 y Op3), y las diferencias de latencia, HA y costo se miden después en ARO.
 
-### Ambiente local
+### Ambiente local y Sandbox Multiprotocolo para gobierno de versiones
 
-- Base común en Podman o Docker Compose: Kafka (KRaft, un nodo), PostgreSQL, Keycloak, el API gateway, el servicio de reversos en Quarkus y un proveedor simulado.
+- Base común en Podman o Docker Compose: Kafka (KRaft, un nodo), PostgreSQL, Keycloak, el API gateway, el servicio de reversos en Quarkus y el **Sandbox Multiprotocolo de Proveedores (`xpos-ms-sandbox-proveedores`)**.
 - Perfil Op1: todo dentro del mismo ambiente; PUEDE usarse OpenShift Local para mostrar los operadores, con la RAM que eso exige.
 - Perfil Op3: PostgreSQL fuera del ambiente del clúster, con TLS y red propia, simulando el servicio administrado.
-- Proveedor simulado (WireMock o Quarkus mínimo) con un endpoint de control para apagarlo, agregar latencia o devolver errores.
+- **Sandbox-Simulador Multiprotocolo (`ISO 8583`, `SOAP`, `REST`) para gobierno de versiones de XPOS:** Además del endpoint de control global (apagar, agregar latencia, inyectar errores), soporta tramas nativas `ISO 8583` (`0800/0810` Echo/Sign-On, `0200/0210` Venta, `0420/0421 -> 0430` Reversos con validación de `DE 90` e idempotencia `DE39=94`), Envelopes XML `SOAP 1.1/1.2` con `WS-Security` y `SOAPFault`, y APIs `REST`, evaluando reglas deterministas por sufijo de folio (`-99` error de negocio, `-68` timeout estado desconocido, `-91` error técnico 503, `-94` ya reversado) para certificar nuevas versiones de XPOS sin depender de los ambientes de QA de los proveedores externos.
 - Fuera de alcance: monitoreo en Datadog, que se integra en la implementación productiva.
 
 ### Guion de demo (unos 10 minutos)
